@@ -1,375 +1,544 @@
-Projeto de Redução de Dimensionalidade em Imagens
-Vou implementar um programa em Python para converter uma imagem colorida em níveis de cinza e depois binarizá-la (preto e branco). Vou usar a biblioteca OpenCV para processamento de imagens.
+import struct
+import math
+import sys
 
-python
-import cv2
-import numpy as np
-import matplotlib.pyplot as plt
-
-def converter_para_cinza(imagem_colorida):
+class ProcessadorImagens:
     """
-    Converte uma imagem colorida para níveis de cinza.
-    
-    Parâmetros:
-    imagem_colorida: imagem no formato BGR (padrão OpenCV)
-    
-    Retorna:
-    Imagem em níveis de cinza (0-255)
+    Classe para processamento de imagens implementada do zero.
+    Todas as operações são feitas manualmente, sem bibliotecas externas.
     """
-    # Converter BGR para escala de cinza usando a fórmula padrão
-    # Luminosidade = 0.299*R + 0.587*G + 0.114*B
-    altura, largura, canais = imagem_colorida.shape
     
-    # Criar matriz vazia para a imagem em cinza
-    imagem_cinza = np.zeros((altura, largura), dtype=np.uint8)
+    @staticmethod
+    def carregar_imagem_bmp(caminho_arquivo):
+        """
+        Carrega uma imagem BMP (formato simples) manualmente.
+        
+        BMP é um dos formatos mais simples para ler manualmente.
+        Esta implementação suporta BMP de 24 bits (formato comum não comprimido).
+        """
+        try:
+            with open(caminho_arquivo, 'rb') as arquivo:
+                # Ler cabeçalho do arquivo BMP (14 bytes)
+                tipo_arquivo = arquivo.read(2)  # Deve ser 'BM'
+                tamanho_arquivo = struct.unpack('<I', arquivo.read(4))[0]
+                reservado1 = struct.unpack('<H', arquivo.read(2))[0]
+                reservado2 = struct.unpack('<H', arquivo.read(2))[0]
+                offset_dados = struct.unpack('<I', arquivo.read(4))[0]
+                
+                # Ler cabeçalho DIB (40 bytes para BITMAPINFOHEADER)
+                tamanho_cabecalho = struct.unpack('<I', arquivo.read(4))[0]
+                largura = struct.unpack('<i', arquivo.read(4))[0]
+                altura = struct.unpack('<i', arquivo.read(4))[0]
+                planos = struct.unpack('<H', arquivo.read(2))[0]
+                bits_por_pixel = struct.unpack('<H', arquivo.read(2))[0]
+                compressao = struct.unpack('<I', arquivo.read(4))[0]
+                tamanho_imagem = struct.unpack('<I', arquivo.read(4))[0]
+                x_pixels_por_metro = struct.unpack('<i', arquivo.read(4))[0]
+                y_pixels_por_metro = struct.unpack('<i', arquivo.read(4))[0]
+                cores_na_paleta = struct.unpack('<I', arquivo.read(4))[0]
+                cores_importantes = struct.unpack('<I', arquivo.read(4))[0]
+                
+                # Verificar se é um BMP suportado (24 bits, não comprimido)
+                if tipo_arquivo != b'BM':
+                    raise ValueError("Não é um arquivo BMP válido")
+                if bits_por_pixel != 24:
+                    raise ValueError(f"Suportado apenas BMP 24 bits. Este tem {bits_por_pixel} bits")
+                if compressao != 0:
+                    raise ValueError("Suportado apenas BMP não comprimido")
+                
+                # Ir para o início dos dados da imagem
+                arquivo.seek(offset_dados)
+                
+                # Calcular padding (linhas em BMP são múltiplos de 4 bytes)
+                bytes_por_linha = largura * 3  # 3 bytes por pixel (BGR)
+                padding = (4 - (bytes_por_linha % 4)) % 4
+                
+                # Criar matriz para armazenar a imagem
+                # BMP armazena de baixo para cima, então invertemos
+                imagem = [[[0, 0, 0] for _ in range(largura)] for _ in range(altura)]
+                
+                # Ler pixels (de baixo para cima)
+                for y in range(altura - 1, -1, -1):
+                    for x in range(largura):
+                        # BMP armazena em ordem BGR (não RGB)
+                        azul = ord(arquivo.read(1))
+                        verde = ord(arquivo.read(1))
+                        vermelho = ord(arquivo.read(1))
+                        imagem[y][x] = [vermelho, verde, azul]  # Converter para RGB
+                    
+                    # Pular bytes de padding
+                    arquivo.read(padding)
+                
+                print(f"Imagem BMP carregada: {largura}x{altura}, {bits_por_pixel} bits")
+                return imagem, largura, altura
+                
+        except Exception as e:
+            print(f"Erro ao carregar BMP: {e}")
+            print("Criando imagem de exemplo...")
+            return ProcessadorImagens.criar_imagem_exemplo()
     
-    # Percorrer todos os pixels
-    for i in range(altura):
-        for j in range(largura):
-            # Obter valores BGR
-            b = imagem_colorida[i, j, 0]
-            g = imagem_colorida[i, j, 1]
-            r = imagem_colorida[i, j, 2]
+    @staticmethod
+    def criar_imagem_exemplo():
+        """
+        Cria uma imagem colorida de exemplo (gradiente de cores).
+        Retorna uma imagem 256x256 com gradientes RGB.
+        """
+        largura, altura = 256, 256
+        imagem = [[[0, 0, 0] for _ in range(largura)] for _ in range(altura)]
+        
+        for y in range(altura):
+            for x in range(largura):
+                # Criar gradientes de cor
+                r = (x + y) // 2  # Vermelho: média de x e y
+                g = y  # Verde: baseado na altura
+                b = x  # Azul: baseado na largura
+                
+                # Garantir que os valores estão entre 0 e 255
+                imagem[y][x] = [
+                    max(0, min(255, r)),
+                    max(0, min(255, g)),
+                    max(0, min(255, b))
+                ]
+        
+        print(f"Imagem de exemplo criada: {largura}x{altura}")
+        return imagem, largura, altura
+    
+    @staticmethod
+    def salvar_imagem_bmp(imagem, largura, altura, caminho_arquivo):
+        """
+        Salva uma imagem como arquivo BMP manualmente.
+        """
+        try:
+            with open(caminho_arquivo, 'wb') as arquivo:
+                # Cabeçalho do arquivo BMP (14 bytes)
+                arquivo.write(b'BM')  # Tipo de arquivo
+                
+                # Calcular tamanho do arquivo
+                bytes_por_linha = largura * 3
+                padding = (4 - (bytes_por_linha % 4)) % 4
+                tamanho_dados = altura * (bytes_por_linha + padding)
+                tamanho_arquivo = 54 + tamanho_dados  # 54 bytes de cabeçalho
+                
+                # Escrever cabeçalho do arquivo
+                arquivo.write(struct.pack('<I', tamanho_arquivo))  # Tamanho do arquivo
+                arquivo.write(struct.pack('<H', 0))  # Reservado 1
+                arquivo.write(struct.pack('<H', 0))  # Reservado 2
+                arquivo.write(struct.pack('<I', 54))  # Offset para dados (54 bytes)
+                
+                # Cabeçalho DIB (40 bytes)
+                arquivo.write(struct.pack('<I', 40))  # Tamanho do cabeçalho DIB
+                arquivo.write(struct.pack('<i', largura))  # Largura
+                arquivo.write(struct.pack('<i', altura))  # Altura
+                arquivo.write(struct.pack('<H', 1))  # Planos
+                arquivo.write(struct.pack('<H', 24))  # Bits por pixel
+                arquivo.write(struct.pack('<I', 0))  # Compressão (0 = nenhuma)
+                arquivo.write(struct.pack('<I', tamanho_dados))  # Tamanho da imagem
+                arquivo.write(struct.pack('<i', 2835))  # X pixels por metro (72 DPI)
+                arquivo.write(struct.pack('<i', 2835))  # Y pixels por metro (72 DPI)
+                arquivo.write(struct.pack('<I', 0))  # Cores na paleta
+                arquivo.write(struct.pack('<I', 0))  # Cores importantes
+                
+                # Escrever dados da imagem (de baixo para cima)
+                bytes_por_linha = largura * 3
+                padding = (4 - (bytes_por_linha % 4)) % 4
+                padding_bytes = b'\x00' * padding
+                
+                for y in range(altura - 1, -1, -1):
+                    for x in range(largura):
+                        # Converter RGB para BGR (formato BMP)
+                        r, g, b = imagem[y][x]
+                        arquivo.write(struct.pack('<BBB', b, g, r))  # BGR
+                    
+                    # Adicionar padding
+                    arquivo.write(padding_bytes)
+                
+                print(f"Imagem salva como BMP: {caminho_arquivo}")
+                return True
+                
+        except Exception as e:
+            print(f"Erro ao salvar BMP: {e}")
+            return False
+    
+    @staticmethod
+    def converter_para_cinza(imagem_rgb, largura, altura):
+        """
+        Converte uma imagem RGB para tons de cinza.
+        Usa a fórmula: cinza = 0.299*R + 0.587*G + 0.114*B
+        """
+        imagem_cinza = [[0 for _ in range(largura)] for _ in range(altura)]
+        
+        for y in range(altura):
+            for x in range(largura):
+                r, g, b = imagem_rgb[y][x]
+                
+                # Calcular valor de cinza usando a fórmula de luminosidade
+                # Coeficientes padrão para conversão RGB para cinza
+                cinza = 0.299 * r + 0.587 * g + 0.114 * b
+                
+                # Garantir que o valor está entre 0 e 255
+                imagem_cinza[y][x] = max(0, min(255, int(cinza)))
+        
+        return imagem_cinza
+    
+    @staticmethod
+    def binarizar_imagem(imagem_cinza, largura, altura, limiar=128):
+        """
+        Converte uma imagem em tons de cinza para binária (preto e branco).
+        """
+        imagem_binaria = [[0 for _ in range(largura)] for _ in range(altura)]
+        
+        for y in range(altura):
+            for x in range(largura):
+                # Se o pixel for maior que o limiar, branco (255), caso contrário, preto (0)
+                if imagem_cinza[y][x] > limiar:
+                    imagem_binaria[y][x] = 255
+                else:
+                    imagem_binaria[y][x] = 0
+        
+        return imagem_binaria
+    
+    @staticmethod
+    def converter_cinza_para_rgb(imagem_cinza, largura, altura):
+        """
+        Converte uma imagem em tons de cinza de volta para RGB
+        (para exibição como imagem colorida, mas em tons de cinza).
+        """
+        imagem_rgb = [[[0, 0, 0] for _ in range(largura)] for _ in range(altura)]
+        
+        for y in range(altura):
+            for x in range(largura):
+                valor = imagem_cinza[y][x]
+                imagem_rgb[y][x] = [valor, valor, valor]  # R=G=B
+        
+        return imagem_rgb
+    
+    @staticmethod
+    def converter_binaria_para_rgb(imagem_binaria, largura, altura):
+        """
+        Converte uma imagem binária de volta para RGB
+        (para exibição como imagem colorida, mas preta e branca).
+        """
+        imagem_rgb = [[[0, 0, 0] for _ in range(largura)] for _ in range(altura)]
+        
+        for y in range(altura):
+            for x in range(largura):
+                valor = imagem_binaria[y][x]
+                imagem_rgb[y][x] = [valor, valor, valor]  # R=G=B
+        
+        return imagem_rgb
+    
+    @staticmethod
+    def exibir_imagem_ascii(imagem, largura, altura, max_largura=80):
+        """
+        Exibe uma versão aproximada da imagem em ASCII no console.
+        Útil para visualizar sem bibliotecas gráficas.
+        """
+        # Redimensionar imagem para caber no console
+        fator = max(1, largura // max_largura)
+        nova_largura = largura // fator
+        nova_altura = altura // (fator * 2)  # Caracteres são mais altos que largos
+        
+        # Caracteres ASCII por intensidade (do mais escuro para o mais claro)
+        caracteres = " .:-=+*#%@"  # 10 níveis
+        
+        print("\n" + "=" * 70)
+        print("VISUALIZAÇÃO ASCII DA IMAGEM")
+        print("=" * 70)
+        
+        for y in range(0, altura, fator * 2):
+            linha = ""
+            for x in range(0, largura, fator):
+                # Calcular valor médio na região
+                soma = 0
+                contador = 0
+                
+                for dy in range(fator * 2):
+                    for dx in range(fator):
+                        ny = y + dy
+                        nx = x + dx
+                        
+                        if ny < altura and nx < largura:
+                            # Determinar valor do pixel
+                            if isinstance(imagem[ny][nx], list):  # Imagem RGB
+                                r, g, b = imagem[ny][nx]
+                                valor = int(0.299 * r + 0.587 * g + 0.114 * b)
+                            else:  # Imagem em cinza ou binária
+                                valor = imagem[ny][nx]
+                            
+                            soma += valor
+                            contador += 1
+                
+                if contador > 0:
+                    media = soma / contador
+                    # Converter valor (0-255) para índice de caractere (0-9)
+                    indice = int((media / 255) * (len(caracteres) - 1))
+                    linha += caracteres[indice]
+                else:
+                    linha += " "
             
-            # Calcular valor de cinza usando a fórmula de luminosidade
-            cinza = int(0.299 * r + 0.587 * g + 0.114 * b)
+            print(linha)
+        
+        print("=" * 70)
+        print("Legenda: '.'=preto, '@'=branco, outros=tons de cinza")
+        print("=" * 70)
+    
+    @staticmethod
+    def exibir_imagem_texto(imagem, largura, altura, tipo="RGB"):
+        """
+        Exibe informações sobre a imagem em formato de texto.
+        """
+        print(f"\nINFORMAÇÕES DA IMAGEM")
+        print(f"Tipo: {tipo}")
+        print(f"Dimensões: {largura}x{altura}")
+        print(f"Total de pixels: {largura * altura}")
+        
+        if tipo == "RGB":
+            print(f"Canais: 3 (R, G, B)")
+            print(f"Bits por pixel: 24 (8 por canal)")
+            print(f"Tamanho aproximado: {largura * altura * 3} bytes")
+        elif tipo == "Cinza":
+            print(f"Canais: 1 (Intensidade)")
+            print(f"Bits por pixel: 8")
+            print(f"Tamanho aproximado: {largura * altura} bytes")
+            print(f"Redução vs RGB: {(1 - (largura * altura) / (largura * altura * 3)) * 100:.1f}%")
+        elif tipo == "Binária":
+            print(f"Canais: 1 (Preto/Branco)")
+            print(f"Bits por pixel: 1")
+            print(f"Tamanho aproximado: {math.ceil(largura * altura / 8)} bytes")
+            print(f"Redução vs RGB: {(1 - (1/24)) * 100:.1f}% (1/24 do tamanho)")
+        
+        # Estatísticas básicas
+        valores = []
+        for y in range(min(10, altura)):
+            for x in range(min(10, largura)):
+                if isinstance(imagem[y][x], list):  # RGB
+                    valores.extend(imagem[y][x])
+                else:  # Cinza ou binária
+                    valores.append(imagem[y][x])
+        
+        if valores:
+            print(f"\nAmostra dos primeiros valores:")
+            for i in range(0, min(30, len(valores)), 10):
+                print(f"  {valores[i:i+10]}")
+    
+    @staticmethod
+    def salvar_imagem_texto(imagem, largura, altura, caminho_arquivo, tipo="RGB"):
+        """
+        Salva os dados da imagem em um arquivo de texto para análise.
+        """
+        try:
+            with open(caminho_arquivo, 'w') as arquivo:
+                arquivo.write(f"Tipo: {tipo}\n")
+                arquivo.write(f"Dimensões: {largura}x{altura}\n")
+                arquivo.write(f"Total de pixels: {largura * altura}\n")
+                
+                if tipo == "RGB":
+                    arquivo.write("Formato: [R, G, B]\n")
+                    arquivo.write("\nDados (primeiras 5 linhas):\n")
+                    for y in range(min(5, altura)):
+                        for x in range(min(10, largura)):
+                            r, g, b = imagem[y][x]
+                            arquivo.write(f"[{r:3},{g:3},{b:3}] ")
+                        arquivo.write("\n")
+                
+                elif tipo == "Cinza":
+                    arquivo.write("Formato: intensidade (0-255)\n")
+                    arquivo.write("\nDados (primeiras 5 linhas):\n")
+                    for y in range(min(5, altura)):
+                        for x in range(min(20, largura)):
+                            arquivo.write(f"{imagem[y][x]:3} ")
+                        arquivo.write("\n")
+                
+                elif tipo == "Binária":
+                    arquivo.write("Formato: 0=preto, 255=branco\n")
+                    arquivo.write("\nDados (primeiras 5 linhas):\n")
+                    for y in range(min(5, altura)):
+                        for x in range(min(40, largura)):
+                            arquivo.write("1" if imagem[y][x] > 127 else "0")
+                        arquivo.write("\n")
             
-            # Garantir que o valor está no intervalo 0-255
-            imagem_cinza[i, j] = min(255, max(0, cinza))
-    
-    return imagem_cinza
+            print(f"Dados salvos em: {caminho_arquivo}")
+            return True
+            
+        except Exception as e:
+            print(f"Erro ao salvar dados: {e}")
+            return False
 
-def binarizar_imagem(imagem_cinza, limiar=128):
-    """
-    Converte uma imagem em níveis de cinza para binária (preto e branco).
-    
-    Parâmetros:
-    imagem_cinza: imagem em níveis de cinza
-    limiar: valor de corte para binarização (padrão=128)
-    
-    Retorna:
-    Imagem binarizada (0 ou 255)
-    """
-    altura, largura = imagem_cinza.shape
-    
-    # Criar matriz vazia para a imagem binarizada
-    imagem_binaria = np.zeros((altura, largura), dtype=np.uint8)
-    
-    # Percorrer todos os pixels
-    for i in range(altura):
-        for j in range(largura):
-            # Se o pixel for maior que o limiar, branco (255), caso contrário, preto (0)
-            if imagem_cinza[i, j] > limiar:
-                imagem_binaria[i, j] = 255
-            else:
-                imagem_binaria[i, j] = 0
-    
-    return imagem_binaria
 
-def binarizar_com_opencv(imagem_cinza, limiar=128):
-    """
-    Versão alternativa usando OpenCV para binarização.
-    Esta função é mais eficiente que a implementação manual.
-    """
-    # Aplicar limiarização (thresholding)
-    _, imagem_binaria = cv2.threshold(imagem_cinza, limiar, 255, cv2.THRESH_BINARY)
-    
-    return imagem_binaria
-
-def carregar_e_processar_imagem(caminho_imagem, limiar=128):
-    """
-    Carrega uma imagem e processa todas as conversões.
-    
-    Parâmetros:
-    caminho_imagem: caminho para a imagem
-    limiar: valor de corte para binarização
-    
-    Retorna:
-    Dicionário com as imagens processadas
-    """
-    # Carregar imagem colorida
-    imagem_colorida = cv2.imread(caminho_imagem)
-    
-    if imagem_colorida is None:
-        print(f"Erro: Não foi possível carregar a imagem em {caminho_imagem}")
-        return None
-    
-    # Converter BGR para RGB para visualização com matplotlib
-    imagem_colorida_rgb = cv2.cvtColor(imagem_colorida, cv2.COLOR_BGR2RGB)
-    
-    # Converter para cinza (implementação manual)
-    imagem_cinza = converter_para_cinza(imagem_colorida)
-    
-    # Binarizar (implementação manual)
-    imagem_binaria = binarizar_imagem(imagem_cinza, limiar)
-    
-    # Usando funções OpenCV para comparação (opcional)
-    imagem_cinza_cv2 = cv2.cvtColor(imagem_colorida, cv2.COLOR_BGR2GRAY)
-    imagem_binaria_cv2 = binarizar_com_opencv(imagem_cinza_cv2, limiar)
-    
-    return {
-        'colorida': imagem_colorida_rgb,
-        'cinza': imagem_cinza,
-        'binaria': imagem_binaria,
-        'cinza_cv2': imagem_cinza_cv2,
-        'binaria_cv2': imagem_binaria_cv2
-    }
-
-def exibir_resultados(resultados, titulo="Resultados do Processamento"):
-    """
-    Exibe as imagens processadas em uma grade.
-    """
-    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
-    
-    # Configurar título principal
-    fig.suptitle(titulo, fontsize=16, fontweight='bold')
-    
-    # Imagem colorida
-    axes[0, 0].imshow(resultados['colorida'])
-    axes[0, 0].set_title('Imagem Colorida (RGB)')
-    axes[0, 0].axis('off')
-    
-    # Imagem em cinza (nossa implementação)
-    axes[0, 1].imshow(resultados['cinza'], cmap='gray')
-    axes[0, 1].set_title('Cinza (Nossa Implementação)')
-    axes[0, 1].axis('off')
-    
-    # Imagem binária (nossa implementação)
-    axes[0, 2].imshow(resultados['binaria'], cmap='gray')
-    axes[0, 2].set_title('Binária (Nossa Implementação)')
-    axes[0, 2].axis('off')
-    
-    # Espaço vazio
-    axes[1, 0].axis('off')
-    
-    # Imagem em cinza (OpenCV)
-    axes[1, 1].imshow(resultados['cinza_cv2'], cmap='gray')
-    axes[1, 1].set_title('Cinza (OpenCV)')
-    axes[1, 1].axis('off')
-    
-    # Imagem binária (OpenCV)
-    axes[1, 2].imshow(resultados['binaria_cv2'], cmap='gray')
-    axes[1, 2].set_title('Binária (OpenCV)')
-    axes[1, 2].axis('off')
-    
-    plt.tight_layout()
-    plt.show()
-
-def analisar_dimensionalidade(imagens):
-    """
-    Analisa e compara a dimensionalidade das imagens.
-    """
-    print("=== ANÁLISE DE DIMENSIONALIDADE ===")
-    
-    # Para a imagem colorida
-    altura, largura, canais = imagens['colorida'].shape
-    print(f"Imagem Colorida:")
-    print(f"  Dimensões: {altura} x {largura} x {canais}")
-    print(f"  Número total de valores: {altura * largura * canais}")
-    
-    # Para a imagem em cinza
-    altura_c, largura_c = imagens['cinza'].shape
-    print(f"\nImagem em Cinza:")
-    print(f"  Dimensões: {altura_c} x {largura_c}")
-    print(f"  Número total de valores: {altura_c * largura_c}")
-    
-    # Calcular redução de dimensionalidade
-    reducao = (1 - (altura_c * largura_c) / (altura * largura * canais)) * 100
-    print(f"  Redução de dimensionalidade: {reducao:.2f}%")
-    
-    # Para a imagem binária
-    altura_b, largura_b = imagens['binaria'].shape
-    print(f"\nImagem Binária:")
-    print(f"  Dimensões: {altura_b} x {largura_b}")
-    print(f"  Número total de valores: {altura_b * largura_b}")
-    
-    # Cada pixel binário requer apenas 1 bit, então podemos calcular a redução em bits
-    bits_colorida = altura * largura * canais * 8  # 8 bits por canal
-    bits_binaria = altura_b * largura_b  # 1 bit por pixel
-    reducao_bits = (1 - bits_binaria / bits_colorida) * 100
-    print(f"  Redução em bits: {reducao_bits:.2f}%")
-    
-    print(f"\nComparação de tamanhos:")
-    print(f"  Colorida: {altura * largura * canais} valores")
-    print(f"  Cinza: {altura_c * largura_c} valores (1/3 do tamanho da colorida)")
-    print(f"  Binária: {altura_b * largura_b} valores (1/24 do tamanho em bits)")
-
-# Função principal
+# Função principal do programa
 def main():
-    # Verificar se o OpenCV está instalado
-    print("Iniciando processamento de imagens...")
-    print("OpenCV versão:", cv2.__version__)
+    """
+    Programa principal para demonstração do processamento de imagens.
+    """
+    print("=" * 70)
+    print("PROCESSAMENTO DE IMAGENS - IMPLEMENTAÇÃO MANUAL")
+    print("=" * 70)
+    print("Este programa converte imagens coloridas para tons de cinza e binárias")
+    print("Tudo implementado do zero, sem bibliotecas externas!")
+    print("=" * 70)
     
-    # Tentar carregar uma imagem de exemplo
-    # Primeiro, vamos tentar usar a imagem Lena clássica
-    # Se não estiver disponível localmente, criaremos uma imagem de exemplo
+    # Inicializar processador
+    processador = ProcessadorImagens()
     
-    caminhos_tentados = [
-        'lena.jpg',
-        'lena.png',
-        'lena_color.jpg',
-        'exemplo.jpg',
-        'imagem.jpg'
-    ]
-    
-    imagem_carregada = None
-    caminho_imagem = None
+    # Tentar carregar uma imagem BMP
+    caminhos_tentados = ["lena.bmp", "imagem.bmp", "exemplo.bmp", "teste.bmp"]
+    imagem_rgb, largura, altura = None, 0, 0
     
     for caminho in caminhos_tentados:
         try:
-            # Tentar carregar a imagem
-            temp_imagem = cv2.imread(caminho)
-            if temp_imagem is not None:
-                imagem_carregada = temp_imagem
-                caminho_imagem = caminho
-                print(f"Imagem carregada: {caminho}")
+            imagem_rgb, largura, altura = processador.carregar_imagem_bmp(caminho)
+            if imagem_rgb:
+                print(f"✓ Imagem carregada: {caminho}")
                 break
         except:
             continue
     
     # Se não encontrou nenhuma imagem, criar uma de exemplo
-    if imagem_carregada is None:
-        print("Nenhuma imagem encontrada. Criando imagem de exemplo...")
+    if not imagem_rgb:
+        print("ℹ  Nenhum arquivo BMP encontrado. Criando imagem de exemplo...")
+        imagem_rgb, largura, altura = processador.criar_imagem_exemplo()
         
-        # Criar uma imagem colorida de exemplo (gradiente)
-        altura, largura = 256, 256
-        imagem_exemplo = np.zeros((altura, largura, 3), dtype=np.uint8)
-        
-        for i in range(altura):
-            for j in range(largura):
-                # Criar gradientes de cor
-                imagem_exemplo[i, j, 0] = j  # Canal B (azul) - varia horizontalmente
-                imagem_exemplo[i, j, 1] = i  # Canal G (verde) - varia verticalmente
-                imagem_exemplo[i, j, 2] = (i + j) // 2  # Canal R (vermelho)
-        
-        # Salvar imagem de exemplo temporariamente
-        caminho_imagem = 'imagem_exemplo.jpg'
-        cv2.imwrite(caminho_imagem, imagem_exemplo)
-        print(f"Imagem de exemplo criada: {caminho_imagem}")
+        # Salvar a imagem de exemplo como BMP
+        processador.salvar_imagem_bmp(imagem_rgb, largura, altura, "exemplo_criado.bmp")
     
-    # Processar a imagem
-    limiar = 128  # Valor de limiar para binarização
-    resultados = carregar_e_processar_imagem(caminho_imagem, limiar)
+    # Exibir informações da imagem original
+    print("\n" + "=" * 70)
+    print("1. IMAGEM ORIGINAL (COLORIDA)")
+    print("=" * 70)
+    processador.exibir_imagem_texto(imagem_rgb, largura, altura, "RGB")
+    processador.exibir_imagem_ascii(imagem_rgb, largura, altura)
     
-    if resultados is not None:
-        # Exibir resultados
-        exibir_resultados(resultados, "Conversão: Colorida → Cinza → Binária")
+    # Converter para tons de cinza
+    print("\n" + "=" * 70)
+    print("2. CONVERSÃO PARA TONS DE CINZA")
+    print("=" * 70)
+    imagem_cinza = processador.converter_para_cinza(imagem_rgb, largura, altura)
+    
+    # Converter de volta para RGB para visualização
+    imagem_cinza_rgb = processador.converter_cinza_para_rgb(imagem_cinza, largura, altura)
+    
+    # Exibir imagem em cinza
+    processador.exibir_imagem_texto(imagem_cinza, largura, altura, "Cinza")
+    processador.exibir_imagem_ascii(imagem_cinza_rgb, largura, altura)
+    
+    # Salvar imagem em cinza como BMP
+    processador.salvar_imagem_bmp(imagem_cinza_rgb, largura, altura, "imagem_cinza.bmp")
+    processador.salvar_imagem_texto(imagem_cinza, largura, altura, "dados_cinza.txt", "Cinza")
+    
+    # Binarizar a imagem
+    print("\n" + "=" * 70)
+    print("3. BINARIZAÇÃO (PRETO E BRANCO)")
+    print("=" * 70)
+    
+    # Testar diferentes limiares
+    limiares = [64, 128, 192]
+    
+    for limiar in limiares:
+        print(f"\n--- Limiar: {limiar} ---")
         
-        # Analisar dimensionalidade
-        analisar_dimensionalidade(resultados)
+        # Binarizar
+        imagem_binaria = processador.binarizar_imagem(imagem_cinza, largura, altura, limiar)
         
-        # Mostrar histogramas para análise
-        fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+        # Converter de volta para RGB para visualização
+        imagem_binaria_rgb = processador.converter_binaria_para_rgb(imagem_binaria, largura, altura)
         
-        # Histograma da imagem em cinza
-        axes[0].hist(resultados['cinza'].ravel(), bins=256, range=[0, 256], color='gray')
-        axes[0].axvline(x=limiar, color='red', linestyle='--', label=f'Limiar={limiar}')
-        axes[0].set_title('Histograma - Imagem em Cinza')
-        axes[0].set_xlabel('Intensidade')
-        axes[0].set_ylabel('Frequência')
-        axes[0].legend()
-        axes[0].grid(True, alpha=0.3)
+        # Exibir imagem binária
+        processador.exibir_imagem_texto(imagem_binaria, largura, altura, "Binária")
+        processador.exibir_imagem_ascii(imagem_binaria_rgb, largura, altura)
         
-        # Histograma da imagem em cinza (OpenCV)
-        axes[1].hist(resultados['cinza_cv2'].ravel(), bins=256, range=[0, 256], color='blue', alpha=0.5)
-        axes[1].hist(resultados['cinza'].ravel(), bins=256, range=[0, 256], color='gray', alpha=0.5)
-        axes[1].axvline(x=limiar, color='red', linestyle='--', label=f'Limiar={limiar}')
-        axes[1].set_title('Comparação de Histogramas')
-        axes[1].set_xlabel('Intensidade')
-        axes[1].set_ylabel('Frequência')
-        axes[1].legend(['OpenCV', 'Nossa implementação', f'Limiar={limiar}'])
-        axes[1].grid(True, alpha=0.3)
+        # Salvar imagem binária como BMP
+        nome_arquivo = f"imagem_binaria_{limiar}.bmp"
+        processador.salvar_imagem_bmp(imagem_binaria_rgb, largura, altura, nome_arquivo)
         
-        # Histograma da imagem binária
-        axes[2].hist(resultados['binaria'].ravel(), bins=2, range=[0, 256], color='black', rwidth=0.8)
-        axes[2].set_title('Histograma - Imagem Binária')
-        axes[2].set_xlabel('Valor (0 ou 255)')
-        axes[2].set_ylabel('Frequência')
-        axes[2].set_xticks([0, 255])
-        axes[2].set_xticklabels(['Preto (0)', 'Branco (255)'])
-        axes[2].grid(True, alpha=0.3)
-        
-        plt.tight_layout()
-        plt.show()
-        
-        print("\n=== RESUMO ===")
-        print("1. Conversão para cinza: Reduz de 3 canais (R, G, B) para 1 canal de intensidade.")
-        print("2. Binarização: Reduz de 256 níveis de cinza para apenas 2 valores (0 e 255).")
-        print("3. A redução de dimensionalidade simplifica a imagem, facilitando análise e processamento.")
-        
-        # Testar com diferentes limiares
-        print("\n=== TESTE COM DIFERENTES LIMIARES ===")
-        limiares_teste = [64, 128, 192]
-        
-        fig, axes = plt.subplots(1, len(limiares_teste), figsize=(15, 5))
-        
-        for idx, limiar_teste in enumerate(limiares_teste):
-            # Binarizar com o limiar atual
-            imagem_bin_teste = binarizar_imagem(resultados['cinza'], limiar_teste)
-            
-            # Exibir resultado
-            axes[idx].imshow(imagem_bin_teste, cmap='gray')
-            axes[idx].set_title(f'Binarização com limiar={limiar_teste}')
-            axes[idx].axis('off')
-        
-        plt.suptitle('Efeito do Limiar na Binarização', fontsize=14, fontweight='bold')
-        plt.tight_layout()
-        plt.show()
+        # Salvar dados binários em arquivo de texto
+        nome_dados = f"dados_binaria_{limiar}.txt"
+        processador.salvar_imagem_texto(imagem_binaria, largura, altura, nome_dados, "Binária")
+    
+    # Resumo final
+    print("\n" + "=" * 70)
+    print("RESUMO DA REDUÇÃO DE DIMENSIONALIDADE")
+    print("=" * 70)
+    
+    # Calcular tamanhos
+    tamanho_rgb = largura * altura * 3  # 3 bytes por pixel
+    tamanho_cinza = largura * altura    # 1 byte por pixel
+    tamanho_binaria = math.ceil(largura * altura / 8)  # 1 bit por pixel
+    
+    print(f"Imagem original (RGB):")
+    print(f"  Pixels: {largura} × {altura} = {largura * altura}")
+    print(f"  Canais: 3 (R, G, B)")
+    print(f"  Tamanho: {tamanho_rgb:,} bytes")
+    
+    print(f"\nImagem em tons de cinza:")
+    print(f"  Pixels: {largura} × {altura} = {largura * altura}")
+    print(f"  Canais: 1 (Intensidade)")
+    print(f"  Tamanho: {tamanho_cinza:,} bytes")
+    print(f"  Redução: {(1 - tamanho_cinza/tamanho_rgb) * 100:.1f}%")
+    
+    print(f"\nImagem binária:")
+    print(f"  Pixels: {largura} × {altura} = {largura * altura}")
+    print(f"  Canais: 1 (Bit)")
+    print(f"  Tamanho: {tamanho_binaria:,} bytes")
+    print(f"  Redução: {(1 - tamanho_binaria/tamanho_rgb) * 100:.1f}%")
+    
+    print(f"\nComparação final:")
+    print(f"  Cinza vs RGB: 1/3 do tamanho")
+    print(f"  Binária vs RGB: 1/24 do tamanho (em bits)")
+    print(f"  Binária vs Cinza: 1/8 do tamanho (em bits)")
+    
+    print("\n" + "=" * 70)
+    print("ARQUIVOS GERADOS:")
+    print("=" * 70)
+    print("1. exemplo_criado.bmp - Imagem colorida de exemplo")
+    print("2. imagem_cinza.bmp - Imagem em tons de cinza")
+    print("3. imagem_binaria_64.bmp - Imagem binária (limiar=64)")
+    print("4. imagem_binaria_128.bmp - Imagem binária (limiar=128)")
+    print("5. imagem_binaria_192.bmp - Imagem binária (limiar=192)")
+    print("6. dados_cinza.txt - Dados da imagem em cinza")
+    print("7. dados_binaria_*.txt - Dados das imagens binárias")
+    
+    print("\n" + "=" * 70)
+    print("PROGRAMA CONCLUÍDO COM SUCESSO!")
+    print("=" * 70)
 
+
+# Instruções de uso
+def mostrar_instrucoes():
+    """
+    Mostra instruções de uso do programa.
+    """
+    print("\n" + "=" * 70)
+    print("INSTRUÇÕES DE USO")
+    print("=" * 70)
+    print("1. Para usar sua própria imagem:")
+    print("   - Coloque um arquivo BMP 24-bit na pasta do programa")
+    print("   - Nomeie-o como: lena.bmp, imagem.bmp ou exemplo.bmp")
+    print("   - O programa tentará carregá-lo automaticamente")
+    print()
+    print("2. Formatos suportados:")
+    print("   - BMP 24-bit não comprimido (formato mais comum)")
+    print("   - Não suporta: JPEG, PNG, GIF, BMP comprimido")
+    print()
+    print("3. Arquivos gerados:")
+    print("   - BMP: Imagens processadas em formato visual")
+    print("   - TXT: Dados das imagens para análise")
+    print()
+    print("4. Limitações da visualização ASCII:")
+    print("   - Aproximação dos tons em caracteres")
+    print("   - Melhor visualização nos arquivos BMP gerados")
+    print("=" * 70 + "\n")
+
+
+# Ponto de entrada do programa
 if __name__ == "__main__":
-    main()
-Explicação do Código
-O programa implementa as seguintes funcionalidades:
-
-1. Conversão para Tons de Cinza
-converter_para_cinza(): Converte uma imagem colorida (BGR) para tons de cinza usando a fórmula de luminosidade: 0.299*R + 0.587*G + 0.114*B
-
-A imagem resultante tem valores de 0 a 255
-
-2. Binarização
-binarizar_imagem(): Converte uma imagem em tons de cinza para preto e branco (0 ou 255) usando um limiar
-
-Pixels com valor acima do limiar tornam-se branco (255), os demais tornam-se preto (0)
-
-3. Análise de Dimensionalidade
-O programa mostra a redução de dimensionalidade:
-
-Imagem colorida: 3 canais (R, G, B) × 8 bits cada = 24 bits por pixel
-
-Imagem em cinza: 1 canal × 8 bits = 8 bits por pixel (redução de 66%)
-
-Imagem binária: 1 bit por pixel (redução de 96% em relação à colorida)
-
-4. Visualização
-Exibe todas as versões da imagem (colorida, cinza, binária)
-
-Mostra histogramas para análise das intensidades
-
-Testa diferentes valores de limiar para binarização
-
-Como Executar
-Instale as dependências:
-
-bash
-pip install opencv-python numpy matplotlib
-Execute o programa:
-
-python
-python nome_do_arquivo.py
-Se você tiver uma imagem chamada "lena.jpg" no diretório, o programa a usará. Caso contrário, criará uma imagem de exemplo.
-
-Resultados Esperados
-Imagem Colorida: Original em RGB
-
-Imagem em Tons de Cinza: Versão com 256 níveis de cinza
-
-Imagem Binária: Versão preto e branco (apenas 2 valores)
-
-Análise de Dimensionalidade: Comparação do tamanho dos dados em cada formato
-
-Histogramas: Distribuição das intensidades de pixel
-
-Teste com Limiares: Como diferentes valores de limiar afetam a binarização
-
-Este projeto demonstra efetivamente a redução de dimensionalidade em imagens, indo de uma representação colorida complexa (3 canais) para uma representação simplificada binária (1 bit por pixel).
-
+    # Mostrar instruções
+    mostrar_instrucoes()
+    
+    # Executar programa principal
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("\n\nPrograma interrompido pelo usuário.")
+    except Exception as e:
+        print(f"\nErro durante a execução: {e}")
+        print("Verifique se tem permissão para criar/ler arquivos na pasta atual.")
